@@ -118,7 +118,10 @@ func (p *codexProvider) WatchPlan(ctx context.Context) (WatchPlan, error) {
 
 func (p *codexProvider) S3Scanner() S3SessionScanner {
 	if p.spec.agent != AgentCodex {
-		return S3SessionScanner{Agent: p.spec.agent}
+		return S3SessionScanner{
+			Agent: p.spec.agent,
+			Keep:  func(string, []string) bool { return false },
+		}
 	}
 	return codexS3Scanner()
 }

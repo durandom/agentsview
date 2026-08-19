@@ -36,7 +36,7 @@ func (f cursorProviderFactory) NewProvider(cfg ProviderConfig) Provider {
 			Caps:   cursorProviderCapabilities(),
 			Config: cfg,
 		},
-		DefaultS3Provider: cursorDefaultS3Provider(),
+		DefaultS3Provider: cursorS3Provider,
 		sources:           newCursorSourceSet(cfg.Roots),
 	}
 }
@@ -131,12 +131,10 @@ func newCursorSourceSet(roots []string) cursorSourceSet {
 	return cursorSourceSet{roots: cleanJSONLRoots(roots)}
 }
 
-func cursorDefaultS3Provider() DefaultS3Provider {
-	return DefaultS3Provider{
-		Agent:      AgentCursor,
-		IDPrefix:   "cursor:",
-		Extensions: []string{".jsonl", ".txt"},
-	}
+var cursorS3Provider = DefaultS3Provider{
+	Agent:      AgentCursor,
+	IDPrefix:   "cursor:",
+	Extensions: []string{".jsonl", ".txt"},
 }
 
 func (s cursorSourceSet) Discover(ctx context.Context) ([]SourceRef, error) {
@@ -147,7 +145,7 @@ func (s cursorSourceSet) Discover(ctx context.Context) ([]SourceRef, error) {
 			return nil, err
 		}
 		if isS3URI(root) {
-			for _, file := range s3PrefixScan(root, cursorDefaultS3Provider().S3Scanner()) {
+			for _, file := range s3PrefixScan(root, cursorS3Provider.S3Scanner()) {
 				addJSONLSource(s3SourceRefFromDiscoveredFile(root, file), &sources, seen)
 			}
 			continue
@@ -170,7 +168,7 @@ func (s cursorSourceSet) DiscoverEach(ctx context.Context, yield func(SourceRef)
 			return err
 		}
 		if isS3URI(root) {
-			for _, file := range s3PrefixScan(root, cursorDefaultS3Provider().S3Scanner()) {
+			for _, file := range s3PrefixScan(root, cursorS3Provider.S3Scanner()) {
 				if err := yield(s3SourceRefFromDiscoveredFile(root, file)); err != nil {
 					return err
 				}

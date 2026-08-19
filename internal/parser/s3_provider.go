@@ -5,6 +5,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // S3Provider is the opt-in surface that lets a single-file provider ingest
@@ -29,15 +30,31 @@ type DefaultS3Provider struct {
 	Extensions []string
 }
 
+var s3ProviderCache sync.Map // AgentType -> S3Provider (nil sentinel = not supported)
+
+type s3ProviderNone struct{}
+
 // S3ProviderFor returns the S3Provider implementation for a registered agent,
-// if that agent's provider implements the interface.
+// if that agent's provider implements the interface. Results are cached.
 func S3ProviderFor(agent AgentType) (S3Provider, bool) {
+	if v, ok := s3ProviderCache.Load(agent); ok {
+		if _, none := v.(s3ProviderNone); none {
+			return nil, false
+		}
+		return v.(S3Provider), true
+	}
 	p, ok := NewProvider(agent, ProviderConfig{})
 	if !ok {
+		s3ProviderCache.Store(agent, s3ProviderNone{})
 		return nil, false
 	}
 	sp, ok := p.(S3Provider)
-	return sp, ok
+	if !ok {
+		s3ProviderCache.Store(agent, s3ProviderNone{})
+		return nil, false
+	}
+	s3ProviderCache.Store(agent, sp)
+	return sp, true
 }
 
 // AgentSupportsS3Discovery reports whether the agent's factory declares
@@ -80,7 +97,7 @@ func (p DefaultS3Provider) S3SessionID(uri string) string {
 	base := path.Base(uri)
 	ext := path.Ext(base)
 	stem := strings.TrimSuffix(base, ext)
-	if stem == "" || stem == base && ext == "" {
+	if stem == "" || (stem == base && ext == "") {
 		return ""
 	}
 	return p.IDPrefix + stem

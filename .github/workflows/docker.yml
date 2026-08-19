@@ -2,7 +2,7 @@ name: Docker
 
 on:
   push:
-    branches: [main, s3-generic-provider-support]
+    branches: [main]
     tags:
       - 'v*'
     paths:

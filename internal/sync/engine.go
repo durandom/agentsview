@@ -9558,12 +9558,18 @@ func (e *Engine) processFile(
 
 	// Every registered agent is provider-authoritative, so processProviderFile
 	// owns all local-file processing. The only sources that fall through are
-	// s3:// Claude/Codex objects, which bypass the provider (its source sets
-	// read local files) and use the legacy S3 sync path. Anything else is an
-	// unrecognized agent type.
+	// s3:// objects for providers that declare S3Discovery, which bypass the
+	// provider (its source sets read local files) and use the dedicated S3
+	// sync path. Anything else is an unrecognized agent type.
 	if !strings.HasPrefix(file.Path, "s3://") {
 		return processResult{
 			err: fmt.Errorf("unknown agent type: %s", file.Agent),
+		}
+	}
+
+	if !parser.AgentSupportsS3Discovery(file.Agent) {
+		return processResult{
+			err: fmt.Errorf("unsupported s3 agent type: %s", file.Agent),
 		}
 	}
 
@@ -9609,14 +9615,7 @@ func (e *Engine) processFile(
 	}
 
 	var res processResult
-	switch file.Agent {
-	case parser.AgentClaude, parser.AgentCodex:
-		res = e.processS3Session(ctx, file, info)
-	default:
-		res = processResult{
-			err: fmt.Errorf("unsupported s3 agent type: %s", file.Agent),
-		}
-	}
+	res = e.processS3Session(ctx, file, info)
 	res.cacheSkip = cacheSkip
 	res.mtime = mtime
 	res.sourceFingerprint = sourceFingerprint
@@ -9696,7 +9695,7 @@ func (e *Engine) processProviderFile(
 		return processResult{}, false
 	}
 	// S3 sources are not provider-owned: the provider source sets read local
-	// files, so s3:// paths use the legacy S3 sync path (processS3Session),
+	// files, so s3:// paths use the dedicated S3 sync path (processS3Session),
 	// which handles object fetch, fingerprinting, and per-agent skip logic.
 	if strings.HasPrefix(file.Path, "s3://") {
 		return processResult{}, false

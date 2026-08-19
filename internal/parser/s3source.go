@@ -1,4 +1,4 @@
-// ABOUTME: Reads Claude/Codex session JSONL directly from an S3-compatible
+// ABOUTME: Reads session JSONL directly from an S3-compatible
 // ABOUTME: object store (AWS S3, MinIO, Aliyun OSS, R2, ...) — pure Go, no cgo.
 package parser
 
@@ -376,7 +376,7 @@ func s3SourceRefFromDiscoveredFile(root string, file DiscoveredFile) SourceRef {
 	}
 }
 
-// s3SessionScanner configures the shared S3 discovery scan over a session root
+// S3SessionScanner configures the shared S3 discovery scan over a session root
 // laid out as .../<machine>/raw/<provider>. The scan lists every object under
 // the root, derives the source machine from that layout, and emits a
 // DiscoveredFile for each object Keep accepts. Keep and Project receive both the
@@ -386,7 +386,7 @@ func s3SourceRefFromDiscoveredFile(root string, file DiscoveredFile) SourceRef {
 // freshness identity (Claude tool-results); providers without sidecars leave it
 // nil, and providers that derive the project from session content leave Project
 // nil.
-type s3SessionScanner struct {
+type S3SessionScanner struct {
 	Agent    AgentType
 	Keep     func(rel string, segs []string) bool
 	Project  func(rel string, segs []string) string
@@ -397,7 +397,7 @@ type s3SessionScanner struct {
 // .../<machine>/raw/<provider> layout. discoverClaudeS3 and discoverCodexS3 are
 // thin configurations of it, and any JSONL provider whose sessions land under
 // the same layout can reuse it by supplying its own Keep/Project predicates.
-func s3PrefixScan(root string, scan s3SessionScanner) []DiscoveredFile {
+func s3PrefixScan(root string, scan S3SessionScanner) []DiscoveredFile {
 	objects, err := listS3Objects(root)
 	if err != nil {
 		return nil
@@ -442,13 +442,17 @@ func s3PrefixScan(root string, scan s3SessionScanner) []DiscoveredFile {
 //   - subagents .../subagents/.../agent-*.jsonl
 //
 // Project is the first path segment under the root (e.g. "-home-user-proj").
-func discoverClaudeS3(root string) []DiscoveredFile {
-	return s3PrefixScan(root, s3SessionScanner{
+func claudeS3Scanner() S3SessionScanner {
+	return S3SessionScanner{
 		Agent:    AgentClaude,
 		Keep:     keepClaudeS3Session,
 		Project:  func(_ string, segs []string) string { return segs[0] },
 		Sidecars: claudeS3SidecarObjects,
-	})
+	}
+}
+
+func discoverClaudeS3(root string) []DiscoveredFile {
+	return s3PrefixScan(root, claudeS3Scanner())
 }
 
 // claudeS3SubagentTranscriptPaths lists candidate subagent transcript objects,
@@ -528,13 +532,17 @@ func claudeS3SidecarObjects(uri string, all []S3Object) []S3Object {
 // discoverCodexS3 lists Codex rollout-*.jsonl under an s3:// sessions root
 // (any depth — Codex nests under 2026/MM/DD/). Project is derived from
 // session content, so it is left empty here, as in the local path.
-func discoverCodexS3(root string) []DiscoveredFile {
-	return s3PrefixScan(root, s3SessionScanner{
+func codexS3Scanner() S3SessionScanner {
+	return S3SessionScanner{
 		Agent: AgentCodex,
 		Keep: func(_ string, segs []string) bool {
 			return isCodexSessionFilename(segs[len(segs)-1])
 		},
-	})
+	}
+}
+
+func discoverCodexS3(root string) []DiscoveredFile {
+	return s3PrefixScan(root, codexS3Scanner())
 }
 
 // FindCodexS3ParentSessionURI locates one explicitly named parent rollout
@@ -667,4 +675,16 @@ func s3URIWithLast(parts []string, last string) string {
 	out = append(out, parts...)
 	out = append(out, last)
 	return "s3://" + strings.Join(out, "/")
+}
+
+func codexS3TempRelParts(parts []string) []string {
+	for i, part := range parts {
+		if part == "sessions" || part == "archived_sessions" {
+			return parts[i:]
+		}
+	}
+	if len(parts) == 0 {
+		return parts
+	}
+	return append([]string{"sessions"}, parts...)
 }

@@ -110,7 +110,7 @@ func TestS3PrefixScanGeneralizesByScanner(t *testing.T) {
 		}, nil
 	}
 
-	got := s3PrefixScan(root, s3SessionScanner{
+	got := s3PrefixScan(root, S3SessionScanner{
 		Agent: AgentQwen,
 		Keep: func(rel string, _ []string) bool {
 			return strings.HasSuffix(rel, ".jsonl")

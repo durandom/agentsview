@@ -10,6 +10,7 @@ import (
 )
 
 var _ Provider = (*cursorProvider)(nil)
+var _ S3Provider = (*cursorProvider)(nil)
 
 type cursorProviderFactory struct {
 	def AgentDef
@@ -35,12 +36,14 @@ func (f cursorProviderFactory) NewProvider(cfg ProviderConfig) Provider {
 			Caps:   cursorProviderCapabilities(),
 			Config: cfg,
 		},
-		sources: newCursorSourceSet(cfg.Roots),
+		DefaultS3Provider: cursorDefaultS3Provider(),
+		sources:           newCursorSourceSet(cfg.Roots),
 	}
 }
 
 type cursorProvider struct {
 	ProviderBase
+	DefaultS3Provider
 	sources cursorSourceSet
 }
 
@@ -128,12 +131,26 @@ func newCursorSourceSet(roots []string) cursorSourceSet {
 	return cursorSourceSet{roots: cleanJSONLRoots(roots)}
 }
 
+func cursorDefaultS3Provider() DefaultS3Provider {
+	return DefaultS3Provider{
+		Agent:      AgentCursor,
+		IDPrefix:   "cursor:",
+		Extensions: []string{".jsonl", ".txt"},
+	}
+}
+
 func (s cursorSourceSet) Discover(ctx context.Context) ([]SourceRef, error) {
 	var sources []SourceRef
 	seen := make(map[string]struct{})
 	for _, root := range s.roots {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if isS3URI(root) {
+			for _, file := range s3PrefixScan(root, cursorDefaultS3Provider().S3Scanner()) {
+				addJSONLSource(s3SourceRefFromDiscoveredFile(root, file), &sources, seen)
+			}
+			continue
 		}
 		for _, path := range s.discoverTranscriptPaths(root) {
 			source, ok := s.sourceRef(root, path)
@@ -151,6 +168,14 @@ func (s cursorSourceSet) DiscoverEach(ctx context.Context, yield func(SourceRef)
 	for _, root := range s.roots {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if isS3URI(root) {
+			for _, file := range s3PrefixScan(root, cursorDefaultS3Provider().S3Scanner()) {
+				if err := yield(s3SourceRefFromDiscoveredFile(root, file)); err != nil {
+					return err
+				}
+			}
+			continue
 		}
 		resolvedRoot, err := filepath.EvalSymlinks(root)
 		if err != nil {
@@ -423,6 +448,9 @@ func cursorAddSeen(seen map[string]string, name, fullPath string) {
 func (s cursorSourceSet) WatchPlan(context.Context) (WatchPlan, error) {
 	roots := make([]WatchRoot, 0, len(s.roots))
 	for _, root := range s.roots {
+		if isS3URI(root) {
+			continue
+		}
 		roots = append(roots, WatchRoot{
 			Path:         root,
 			Recursive:    true,
@@ -588,6 +616,8 @@ func (s cursorSourceSet) pathFromSource(source SourceRef) (string, bool) {
 		if src != nil && src.Path != "" {
 			return src.Path, true
 		}
+	case MaterializedFileSource:
+		return src.Path, src.Path != ""
 	}
 	for _, candidate := range []string{
 		source.DisplayPath,
@@ -751,6 +781,7 @@ func cursorProviderCapabilities() Capabilities {
 			PerSessionErrors:     CapabilityNotApplicable,
 			ExcludedSessions:     CapabilityNotApplicable,
 			ForceReplaceOnParse:  CapabilityNotApplicable,
+			S3Discovery:          CapabilitySupported,
 		},
 		Content: ContentCapabilities{
 			FirstMessage: CapabilitySupported,

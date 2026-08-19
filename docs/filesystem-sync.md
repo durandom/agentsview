@@ -62,7 +62,7 @@ per-agent array, default, or environment variable, the structured entry
 supplies the machine label.
 
 `session_sources` accepts filesystem roots only. Keep using the existing
-Claude/Codex per-agent arrays for `s3://` roots; S3 ingestion has established
+per-agent arrays for `s3://` roots; S3 ingestion has established
 machine-derived ID-prefix behavior that differs from filesystem labeling. Native
 SQLite-backed agent stores are supported when `dir` points at their filesystem
 root.

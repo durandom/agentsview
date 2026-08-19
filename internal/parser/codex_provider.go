@@ -13,6 +13,7 @@ import (
 
 var _ Provider = (*codexProvider)(nil)
 var _ ActivityHintProvider = (*codexProvider)(nil)
+var _ S3Provider = (*codexProvider)(nil)
 
 // codexProviderSpec parameterizes the one shared Codex-format provider
 // implementation for Codex and its TraeX fork. Both reuse the same
@@ -73,7 +74,11 @@ func (f *codexProviderFactory) Definition() AgentDef {
 }
 
 func (f *codexProviderFactory) Capabilities() Capabilities {
-	return codexProviderCapabilities()
+	caps := codexProviderCapabilities()
+	if f.spec.agent == AgentCodex {
+		caps.Source.S3Discovery = CapabilitySupported
+	}
+	return caps
 }
 
 func (f *codexProviderFactory) NewProvider(cfg ProviderConfig) Provider {
@@ -81,7 +86,7 @@ func (f *codexProviderFactory) NewProvider(cfg ProviderConfig) Provider {
 	return &codexProvider{
 		ProviderBase: ProviderBase{
 			Def:    cloneAgentDef(f.def),
-			Caps:   codexProviderCapabilities(),
+			Caps:   f.Capabilities(),
 			Config: cfg,
 		},
 		spec:            f.spec,
@@ -109,6 +114,41 @@ func (p *codexProvider) DiscoverEach(ctx context.Context, yield func(SourceRef) 
 
 func (p *codexProvider) WatchPlan(ctx context.Context) (WatchPlan, error) {
 	return p.sources.WatchPlan(ctx)
+}
+
+func (p *codexProvider) S3Scanner() S3SessionScanner {
+	if p.spec.agent != AgentCodex {
+		return S3SessionScanner{Agent: p.spec.agent}
+	}
+	return codexS3Scanner()
+}
+
+func (p *codexProvider) S3SessionID(uri string) string {
+	if p.spec.agent != AgentCodex {
+		return ""
+	}
+	uuid := CodexSessionUUIDFromFilename(pathBase(uri))
+	if uuid == "" {
+		return ""
+	}
+	return "codex:" + uuid
+}
+
+func (p *codexProvider) S3TempRelPath(objectPath string) (string, error) {
+	if p.spec.agent != AgentCodex {
+		return "", fmt.Errorf("unsafe s3 object name: %q", objectPath)
+	}
+	return s3TempRelPathAfterRawAgent(objectPath, "codex", codexS3TempRelParts)
+}
+
+func (p *codexProvider) S3StatSession(uri string) (S3Object, error) {
+	return StatCodexS3Session(uri)
+}
+
+func (p *codexProvider) S3PostFetchHydrate(
+	tempDir, tempPath, configuredRoot, objectURI string,
+) error {
+	return nil
 }
 
 func (p *codexProvider) ActivityHintSources(

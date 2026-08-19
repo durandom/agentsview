@@ -10,6 +10,7 @@ import (
 )
 
 var _ Provider = (*claudeProvider)(nil)
+var _ S3Provider = (*claudeProvider)(nil)
 
 type claudeProviderFactory struct {
 	def AgentDef
@@ -661,6 +662,33 @@ func claudeProviderTokenTotals(
 	return totalOut, peakCtx, hasTotalOut, hasPeakCtx
 }
 
+func (p *claudeProvider) S3Scanner() S3SessionScanner {
+	return claudeS3Scanner()
+}
+
+func (p *claudeProvider) S3SessionID(uri string) string {
+	name := pathBase(uri)
+	id, ok := strings.CutSuffix(name, ".jsonl")
+	if !ok {
+		return ""
+	}
+	return id
+}
+
+func (p *claudeProvider) S3TempRelPath(objectPath string) (string, error) {
+	return s3TempRelPathAfterRawAgent(objectPath, string(AgentClaude), nil)
+}
+
+func (p *claudeProvider) S3StatSession(uri string) (S3Object, error) {
+	return StatClaudeS3Session(uri)
+}
+
+func (p *claudeProvider) S3PostFetchHydrate(
+	tempDir, tempPath, configuredRoot, objectURI string,
+) error {
+	return nil
+}
+
 func claudeProviderCapabilities() Capabilities {
 	return Capabilities{
 		Source: SourceCapabilities{
@@ -677,6 +705,7 @@ func claudeProviderCapabilities() Capabilities {
 			ForceReplaceOnParse:  CapabilitySupported,
 			VerifiedLocalStat:    CapabilitySupported,
 			MultiFileStatHash:    CapabilitySupported,
+			S3Discovery:          CapabilitySupported,
 		},
 		Content: ContentCapabilities{
 			FirstMessage:         CapabilitySupported,

@@ -5,6 +5,12 @@ description: Release history for AgentsView
 
 ## Unreleased
 
+**New features**
+
+- Ingest Cursor sessions from S3 roots through a shared single-file S3 provider
+  interface, so additional JSONL agents can opt in without repeating per-agent
+  sync switches.
+
 ---
 
 ## 0.41.1

@@ -163,6 +163,53 @@ func TestProcessS3CursorNamespacesIDsBySourceMachine(t *testing.T) {
 	assert.Nil(t, raw)
 }
 
+func TestProcessS3CursorForceParseBypassesUnchangedSourceShortcut(t *testing.T) {
+	database := openTestDB(t)
+	path := "s3://bucket/laptop/raw/cursor/demo-proj/forced-id.jsonl"
+	content := "user:\nForce this parse\nassistant:\nParsed.\n"
+	size := int64(len(content))
+	mtime := time.Date(2026, 6, 24, 12, 30, 0, 0, time.UTC).UnixNano()
+	require.NoError(t, database.UpsertSession(db.Session{
+		ID:        "laptop~cursor:forced-id",
+		Project:   "demo-proj",
+		Machine:   "laptop",
+		Agent:     "cursor",
+		FilePath:  &path,
+		FileSize:  &size,
+		FileMtime: &mtime,
+	}))
+	require.NoError(t, database.SetSessionDataVersion(
+		"laptop~cursor:forced-id", db.CurrentDataVersion(),
+	))
+
+	oldFetch := fetchS3Object
+	t.Cleanup(func() { fetchS3Object = oldFetch })
+	fetches := 0
+	fetchS3Object = func(got string) (io.ReadCloser, error) {
+		require.Equal(t, path, got)
+		fetches++
+		return io.NopCloser(strings.NewReader(content)), nil
+	}
+
+	e := &Engine{db: database, machine: "central"}
+	res := e.processFile(t.Context(), parser.DiscoveredFile{
+		Agent:       parser.AgentCursor,
+		Path:        path,
+		Project:     "demo-proj",
+		Machine:     "laptop",
+		SourceSize:  size,
+		SourceMtime: mtime,
+		ForceParse:  true,
+	})
+
+	require.NoError(t, res.err)
+	assert.False(t, res.skip)
+	assert.Equal(t, 1, fetches)
+	require.Len(t, res.results, 1)
+	require.Len(t, res.results[0].Messages, 2)
+	assert.Equal(t, "Force this parse", res.results[0].Messages[0].Content)
+}
+
 func TestProcessFileS3UnsupportedAgent(t *testing.T) {
 	e := &Engine{db: openTestDB(t), machine: "central"}
 	res := e.processFile(context.Background(), parser.DiscoveredFile{

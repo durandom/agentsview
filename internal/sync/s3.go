@@ -252,7 +252,7 @@ func (e *Engine) processS3Session(
 		rawID := p.S3SessionID(file.Path)
 		if rawID != "" {
 			fullID := applyIDPrefixToID(idPrefix, rawID)
-			if !sourceChanged &&
+			if !e.forceParseRequested(file) && !sourceChanged &&
 				e.shouldSkipFileWithPrefix(
 					idPrefix, rawID, sourceInfo, sourceFingerprint,
 				) &&

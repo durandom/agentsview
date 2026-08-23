@@ -122,7 +122,9 @@ func TestProcessS3ClaudeForceParseBypassesPrimarylessFreshness(t *testing.T) {
 	info, err := s3SourceFileInfo(file)
 	require.NoError(t, err)
 
-	res := engine.processS3Session(t.Context(), file, info)
+	provider, ok := parser.S3ProviderFor(file.Agent)
+	require.True(t, ok)
+	res := engine.processS3Session(t.Context(), file, info, provider)
 	require.NoError(t, res.err)
 	assert.True(t, fetched,
 		"parse-diff must fetch and parse a primary-less S3 Claude source")
@@ -1220,17 +1222,21 @@ func TestS3DiscoveredSessionIDUsesProvider(t *testing.T) {
 }
 
 func TestSafeS3TempRelPathUsesProvider(t *testing.T) {
+	cursorProvider, ok := parser.S3ProviderFor(parser.AgentCursor)
+	require.True(t, ok)
 	got, err := safeS3TempRelPath(parser.DiscoveredFile{
 		Agent: parser.AgentCursor,
 		Path:  "s3://bucket/laptop/raw/cursor/demo-proj/abc.jsonl",
-	})
+	}, cursorProvider)
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join("demo-proj", "abc.jsonl"), got)
 
+	claudeProvider, ok := parser.S3ProviderFor(parser.AgentClaude)
+	require.True(t, ok)
 	got, err = safeS3TempRelPath(parser.DiscoveredFile{
 		Agent: parser.AgentClaude,
 		Path:  "s3://bucket/laptop/raw/claude/demo-proj/sess.jsonl",
-	})
+	}, claudeProvider)
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join("demo-proj", "sess.jsonl"), got)
 }

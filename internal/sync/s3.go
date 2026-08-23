@@ -68,11 +68,9 @@ func applyIDPrefixToParsedResult(
 	}
 }
 
-func safeS3TempRelPath(file parser.DiscoveredFile) (string, error) {
-	p, ok := s3ProviderFor(file.Agent)
-	if !ok {
-		return "", fmt.Errorf("unsafe s3 object name: %q", file.Path)
-	}
+func safeS3TempRelPath(
+	file parser.DiscoveredFile, p parser.S3Provider,
+) (string, error) {
 	return p.S3TempRelPath(file.Path)
 }
 
@@ -134,6 +132,7 @@ func localCodexSessionIndexPath(sessionPath string) string {
 
 func hydrateS3CodexParent(
 	tempDir, childPath, configuredRoot, childURI string,
+	p parser.S3Provider,
 ) bool {
 	parentID, resolutionNeeded := parser.CodexReplayParentID(childPath)
 	if !resolutionNeeded {
@@ -148,7 +147,7 @@ func hydrateS3CodexParent(
 	relPath, err := safeS3TempRelPath(parser.DiscoveredFile{
 		Agent: parser.AgentCodex,
 		Path:  parentURI,
-	})
+	}, p)
 	if err != nil {
 		return false
 	}
@@ -181,11 +180,12 @@ func hydrateS3CodexParent(
 // normal per-agent processor, then delete the temp file.
 func (e *Engine) processS3Session(
 	ctx context.Context, file parser.DiscoveredFile, sourceInfo os.FileInfo,
+	p parser.S3Provider,
 ) processResult {
 	idPrefix := s3SessionIDPrefix(file.Machine)
 	sourceFingerprint := s3SourceFingerprint(file)
 	sourceChanged := e.s3SourceMetadataChangedFromInfo(
-		file,
+		file, p,
 		sourceInfo.Size(),
 		sourceInfo.ModTime().UnixNano(),
 		sourceFingerprint,
@@ -249,10 +249,7 @@ func (e *Engine) processS3Session(
 			}
 		}
 	default:
-		rawID := ""
-		if p, ok := s3ProviderFor(file.Agent); ok {
-			rawID = p.S3SessionID(file.Path)
-		}
+		rawID := p.S3SessionID(file.Path)
 		if rawID != "" {
 			fullID := applyIDPrefixToID(idPrefix, rawID)
 			if !sourceChanged &&
@@ -270,7 +267,7 @@ func (e *Engine) processS3Session(
 		}
 	}
 
-	relPath, err := safeS3TempRelPath(file)
+	relPath, err := safeS3TempRelPath(file, p)
 	if err != nil {
 		return processResult{err: err}
 	}
@@ -324,7 +321,7 @@ func (e *Engine) processS3Session(
 		if file.ProviderSource != nil {
 			configuredRoot = file.ProviderSource.ConfiguredRoot
 		}
-		hydrateS3CodexParent(dir, tmp, configuredRoot, file.Path)
+		hydrateS3CodexParent(dir, tmp, configuredRoot, file.Path, p)
 		indexPath, err := hydrateS3CodexSessionIndex(tmp, file.Path)
 		if err != nil {
 			return processResult{err: err, noCacheSkip: true, retentionLease: lease}
@@ -337,10 +334,8 @@ func (e *Engine) processS3Session(
 		if file.ProviderSource != nil {
 			configuredRoot = file.ProviderSource.ConfiguredRoot
 		}
-		if p, ok := s3ProviderFor(file.Agent); ok {
-			if err := p.S3PostFetchHydrate(dir, tmp, configuredRoot, file.Path); err != nil {
-				return processResult{err: err, noCacheSkip: true, retentionLease: lease}
-			}
+		if err := p.S3PostFetchHydrate(dir, tmp, configuredRoot, file.Path); err != nil {
+			return processResult{err: err, noCacheSkip: true, retentionLease: lease}
 		}
 	}
 	if err := os.Chtimes(tmp, sourceInfo.ModTime(), sourceInfo.ModTime()); err != nil {

@@ -113,12 +113,21 @@ func TestProcessS3CursorNamespacesIDsBySourceMachine(t *testing.T) {
 	objectMtime := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
 
 	oldFetch := fetchS3Object
-	t.Cleanup(func() { fetchS3Object = oldFetch })
+	oldLookup := lookupS3Provider
+	t.Cleanup(func() {
+		fetchS3Object = oldFetch
+		lookupS3Provider = oldLookup
+	})
 	fetchS3Object = func(got string) (io.ReadCloser, error) {
 		if got != path {
 			return nil, missingS3ObjectError()
 		}
 		return io.NopCloser(strings.NewReader(content)), nil
+	}
+	providerLookups := 0
+	lookupS3Provider = func(agent parser.AgentType) (parser.S3Provider, bool) {
+		providerLookups++
+		return parser.S3ProviderFor(agent)
 	}
 
 	e := &Engine{db: database, machine: "central"}
@@ -132,6 +141,7 @@ func TestProcessS3CursorNamespacesIDsBySourceMachine(t *testing.T) {
 	})
 	require.NoError(t, res.err)
 	require.Len(t, res.results, 1)
+	assert.Equal(t, 1, providerLookups)
 
 	written, _, failed, _ := e.writeBatch([]pendingWrite{{
 		sess: res.results[0].Session,

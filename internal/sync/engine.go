@@ -9969,14 +9969,15 @@ func (e *Engine) processFile(
 		}
 	}
 
-	if !parser.AgentSupportsS3Discovery(file.Agent) {
+	s3Provider, ok := s3ProviderFor(file.Agent)
+	if !ok {
 		return processResult{
 			err: fmt.Errorf("unsupported s3 agent type: %s", file.Agent),
 		}
 	}
 
 	if file.SourceMtime == 0 {
-		obj, err := statS3SourceObject(file)
+		obj, err := statS3SourceObjectWithProvider(file, s3Provider)
 		if err != nil {
 			return processResult{
 				err: fmt.Errorf("stat %s: %w", file.Path, err),
@@ -10016,7 +10017,7 @@ func (e *Engine) processFile(
 		}
 	}
 
-	var res = e.processS3Session(ctx, file, info)
+	var res = e.processS3Session(ctx, file, info, s3Provider)
 	res.cacheSkip = cacheSkip
 	res.mtime = mtime
 	res.sourceFingerprint = sourceFingerprint

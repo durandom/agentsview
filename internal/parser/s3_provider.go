@@ -38,39 +38,39 @@ type s3ProviderNone struct{}
 // if that agent advertises S3 discovery and its provider implements the
 // interface. Results are cached.
 func S3ProviderFor(agent AgentType) (S3Provider, bool) {
-	if !AgentSupportsS3Discovery(agent) {
-		s3ProviderCache.Store(agent, s3ProviderNone{})
-		return nil, false
-	}
 	if v, ok := s3ProviderCache.Load(agent); ok {
 		if _, none := v.(s3ProviderNone); none {
 			return nil, false
 		}
 		return v.(S3Provider), true
 	}
-	p, ok := NewProvider(agent, ProviderConfig{})
-	if !ok {
-		s3ProviderCache.Store(agent, s3ProviderNone{})
+	factory, ok := ProviderFactoryByType(agent)
+	if !ok || factory.Capabilities().Source.S3Discovery != CapabilitySupported {
+		s3ProviderCache.LoadOrStore(agent, s3ProviderNone{})
 		return nil, false
 	}
+	p := factory.NewProvider(ProviderConfig{})
 	sp, ok := p.(S3Provider)
 	if !ok {
-		s3ProviderCache.Store(agent, s3ProviderNone{})
+		s3ProviderCache.LoadOrStore(agent, s3ProviderNone{})
 		return nil, false
 	}
-	s3ProviderCache.Store(agent, sp)
-	return sp, true
+	actual, loaded := s3ProviderCache.LoadOrStore(agent, sp)
+	if !loaded {
+		return sp, true
+	}
+	if _, none := actual.(s3ProviderNone); none {
+		return nil, false
+	}
+	return actual.(S3Provider), true
 }
 
-// AgentSupportsS3Discovery reports whether the agent's factory declares
-// Source.S3Discovery. Scheduling and S3 root-segment detection should trust
-// this flag rather than a hardcoded agent whitelist.
+// AgentSupportsS3Discovery reports whether the agent declares S3 discovery and
+// implements S3Provider. Scheduling and S3 root-segment detection should use
+// this lookup rather than a hardcoded agent whitelist.
 func AgentSupportsS3Discovery(agent AgentType) bool {
-	factory, ok := ProviderFactoryByType(agent)
-	if !ok {
-		return false
-	}
-	return factory.Capabilities().Source.S3Discovery == CapabilitySupported
+	_, ok := S3ProviderFor(agent)
+	return ok
 }
 
 func (p DefaultS3Provider) S3Scanner() S3SessionScanner {

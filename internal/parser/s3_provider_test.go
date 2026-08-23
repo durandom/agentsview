@@ -84,3 +84,19 @@ func TestS3ProviderForRequiresS3DiscoveryCapability(t *testing.T) {
 	require.True(t, ok)
 	assert.NotNil(t, provider)
 }
+
+func TestS3ProviderForCachedLookupDoesNotAllocate(t *testing.T) {
+	provider, ok := S3ProviderFor(AgentCursor)
+	require.True(t, ok)
+	require.NotNil(t, provider)
+
+	var cached S3Provider
+	var found bool
+	allocs := testing.AllocsPerRun(100, func() {
+		cached, found = S3ProviderFor(AgentCursor)
+	})
+
+	require.True(t, found)
+	require.NotNil(t, cached)
+	assert.Zero(t, allocs)
+}

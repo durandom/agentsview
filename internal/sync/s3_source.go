@@ -57,6 +57,16 @@ func s3SourceFingerprint(file parser.DiscoveredFile) string {
 }
 
 func statS3SourceObject(file parser.DiscoveredFile) (parser.S3Object, error) {
+	p, ok := s3ProviderFor(file.Agent)
+	if !ok {
+		return parser.S3Object{}, fmt.Errorf("unsupported s3 agent type: %s", file.Agent)
+	}
+	return statS3SourceObjectWithProvider(file, p)
+}
+
+func statS3SourceObjectWithProvider(
+	file parser.DiscoveredFile, p parser.S3Provider,
+) (parser.S3Object, error) {
 	// Keep Claude/Codex package-level hooks so existing tests can stub
 	// sidecar-aware stats without replacing the provider.
 	switch file.Agent {
@@ -64,10 +74,6 @@ func statS3SourceObject(file parser.DiscoveredFile) (parser.S3Object, error) {
 		return statClaudeS3Session(file.Path)
 	case parser.AgentCodex:
 		return statCodexS3Session(file.Path)
-	}
-	p, ok := s3ProviderFor(file.Agent)
-	if !ok {
-		return parser.S3Object{}, fmt.Errorf("unsupported s3 agent type: %s", file.Agent)
 	}
 	return p.S3StatSession(file.Path)
 }
@@ -77,6 +83,12 @@ func s3DiscoveredSessionID(file parser.DiscoveredFile) string {
 	if !ok {
 		return ""
 	}
+	return s3DiscoveredSessionIDWithProvider(file, p)
+}
+
+func s3DiscoveredSessionIDWithProvider(
+	file parser.DiscoveredFile, p parser.S3Provider,
+) string {
 	id := p.S3SessionID(file.Path)
 	if id == "" {
 		return ""
@@ -88,15 +100,20 @@ func (e *Engine) s3SourceMetadataChanged(file parser.DiscoveredFile) bool {
 	if file.SourceMtime == 0 {
 		return false
 	}
+	p, ok := s3ProviderFor(file.Agent)
+	if !ok {
+		return false
+	}
 	return e.s3SourceMetadataChangedFromInfo(
-		file, file.SourceSize, file.SourceMtime, file.SourceFingerprint,
+		file, p, file.SourceSize, file.SourceMtime, file.SourceFingerprint,
 	)
 }
 
 func (e *Engine) s3SourceMetadataChangedFromInfo(
-	file parser.DiscoveredFile, size, mtime int64, sourceFingerprint string,
+	file parser.DiscoveredFile, p parser.S3Provider,
+	size, mtime int64, sourceFingerprint string,
 ) bool {
-	sessionID := s3DiscoveredSessionID(file)
+	sessionID := s3DiscoveredSessionIDWithProvider(file, p)
 	if sessionID == "" {
 		return false
 	}
